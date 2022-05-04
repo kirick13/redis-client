@@ -27,7 +27,7 @@ exports.hmset = {
                 ];
             }
 
-            if (typeof source === 'object') {
+            if (typeof source === 'object' && null !== source) {
                 return [
                     key,
                     ...objectToHashBulk(source),

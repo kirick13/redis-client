@@ -6,7 +6,7 @@ class RedisScript {
         this._redisClient = redisClient;
 
         this.script = script;
-        this.script_sha1 = createHash('sha1').update(script).digest('hex');
+        this.script_sha1 = RedisScript.getHash(script);
     }
 
     async run (...args) {
@@ -31,6 +31,10 @@ class RedisScript {
 
     async _loadScript () {
         this.script_sha1 = await this._redisClient.SCRIPT('load', this.script);
+    }
+
+    static getHash (script) {
+        return createHash('sha1').update(script).digest('hex');
     }
 }
 

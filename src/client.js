@@ -4,7 +4,7 @@ const { createClient } = require('redis');
 const COMMANDS         = require('./commands');
 const RedisClientMulti = require('./multi');
 const RedisScript      = require('./script');
-const TRANSFORM       = require('./transform');
+const TRANSFORM        = require('./transform');
 
 const RedisClient = function (client_configuration) {
     this._client_configuration = client_configuration;
@@ -47,6 +47,10 @@ RedisClient.prototype.duplicate = function () {
     );
 };
 
+RedisClient.prototype.sendCommand = function (...args) {
+    return this._client.sendCommand(args);
+};
+
 for (const method of [
     // commands
     'subscribe',
@@ -70,10 +74,21 @@ RedisClient.prototype.MULTI = RedisClient.prototype.multi = function () {
 };
 
 RedisClient.prototype.createScript = function (script) {
-    return new RedisScript(
-        this,
-        script,
-    );
+    const scripts_cache = (this._scripts_cache ??= new Map());
+
+    const script_hash = RedisScript.getHash(script);
+
+    if (scripts_cache.has(script_hash) === false) {
+        scripts_cache.set(
+            script_hash,
+            new RedisScript(
+                this,
+                script,
+            ),
+        );
+    }
+
+    return scripts_cache.get(script_hash);
 };
 
 module.exports = RedisClient;
