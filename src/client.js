@@ -6,18 +6,48 @@ const RedisClientMulti = require('./multi');
 const RedisScript      = require('./script');
 const TRANSFORM        = require('./transform');
 
-const RedisClient = function (client_configuration) {
-    this._client_configuration = client_configuration;
+class RedisClient {
+    constructor (client_configuration) {
+        this._client_configuration = client_configuration;
 
-    const client = this._client = createClient(client_configuration);
+        const client = this._client = createClient(client_configuration);
 
-    client.on(
-        'error',
-        error => console.error('[REDIS CLIENT]', error),
-    );
+        client.on(
+            'error',
+            error => console.error('[REDIS CLIENT]', error),
+        );
 
-    client.connect();
-};
+        client.connect();
+    }
+
+    duplicate () {
+        return new RedisClient(
+            this._client_configuration,
+        );
+    }
+
+    sendCommand (...args) {
+        return this._client.sendCommand(args);
+    }
+
+    createScript (script) {
+        const scripts_cache = (this._scripts_cache ??= new Map());
+
+        const script_hash = RedisScript.getHash(script);
+
+        if (scripts_cache.has(script_hash) === false) {
+            scripts_cache.set(
+                script_hash,
+                new RedisScript(
+                    this,
+                    script,
+                ),
+            );
+        }
+
+        return scripts_cache.get(script_hash);
+    }
+}
 
 for (const command of COMMANDS) {
     RedisClient.prototype[command] = RedisClient.prototype[command.toUpperCase()] = async function (...args) {
@@ -41,14 +71,8 @@ for (const command of COMMANDS) {
     };
 }
 
-RedisClient.prototype.duplicate = function () {
-    return new RedisClient(
-        this._client_configuration,
-    );
-};
-
-RedisClient.prototype.sendCommand = function (...args) {
-    return this._client.sendCommand(args);
+RedisClient.prototype.MULTI = RedisClient.prototype.multi = function () {
+    return new RedisClientMulti(this);
 };
 
 for (const method of [
@@ -68,27 +92,5 @@ for (const method of [
         return this._client[method](...args);
     };
 }
-
-RedisClient.prototype.MULTI = RedisClient.prototype.multi = function () {
-    return new RedisClientMulti(this);
-};
-
-RedisClient.prototype.createScript = function (script) {
-    const scripts_cache = (this._scripts_cache ??= new Map());
-
-    const script_hash = RedisScript.getHash(script);
-
-    if (scripts_cache.has(script_hash) === false) {
-        scripts_cache.set(
-            script_hash,
-            new RedisScript(
-                this,
-                script,
-            ),
-        );
-    }
-
-    return scripts_cache.get(script_hash);
-};
 
 module.exports = RedisClient;

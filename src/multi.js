@@ -2,13 +2,22 @@
 const COMMANDS  = require('./commands');
 const TRANSFORM = require('./transform');
 
-const RedisClientMulti = function (redisClient) {
-    this._multi = redisClient._client.multi();
-    this._transforms = [];
-    this.queue_length = 0;
+class RedisClientMulti {
+    constructor (redisClient) {
+        this._multi = redisClient._client.multi();
+        this._transforms = [];
+        this.queue_length = 0;
 
-    this._names = null;
-};
+        this._names = null;
+    }
+
+    as (field_name) {
+        this._names ??= {};
+        this._names[field_name] = this.queue_length - 1;
+
+        return this;
+    }
+}
 
 for (const command of COMMANDS) {
     RedisClientMulti.prototype[command] = RedisClientMulti.prototype[command.toUpperCase()] = function (...args) {
@@ -55,13 +64,6 @@ RedisClientMulti.prototype.EXEC = RedisClientMulti.prototype.exec = async functi
     else {
         return result;
     }
-};
-
-RedisClientMulti.prototype.as = function (field_name) {
-    this._names ??= {};
-    this._names[field_name] = this.queue_length - 1;
-
-    return this;
 };
 
 module.exports = RedisClientMulti;
