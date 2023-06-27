@@ -47,6 +47,10 @@ class RedisClient {
 
         return scripts_cache.get(script_hash);
     }
+
+    /* async */ disconnect () {
+        return this._client.disconnect();
+    }
 }
 
 for (const command of COMMANDS) {

@@ -1,6 +1,6 @@
 {
 	"name": "@kirick/redis-client",
-	"version": "4.0.1-beta.3",
+	"version": "4.0.1-beta.4",
 	"description": "Slightly enhanced redis client for Node.js built on top of \"redis\" package.",
 	"publishConfig": {
 		"access": "public",
