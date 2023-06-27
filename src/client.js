@@ -7,94 +7,100 @@ const RedisScript      = require('./script');
 const TRANSFORM        = require('./transform');
 
 class RedisClient {
-    constructor (client_configuration) {
-        this._client_configuration = client_configuration;
+	constructor (client_configuration) {
+		this._client_configuration = client_configuration;
 
-        const client = this._client = createClient(client_configuration);
+		const client = this._client = createClient(client_configuration);
 
-        client.on(
-            'error',
-            error => console.error('[REDIS CLIENT]', error),
-        );
+		client.on(
+			'error',
+			error => console.error('[REDIS CLIENT]', error),
+		);
 
-        client.connect();
-    }
+		client.connect();
+	}
 
-    duplicate () {
-        return new RedisClient(
-            this._client_configuration,
-        );
-    }
+	duplicate () {
+		return new RedisClient(
+			this._client_configuration,
+		);
+	}
 
-    sendCommand (...args) {
-        return this._client.sendCommand(args);
-    }
+	sendCommand (...args) {
+		for (let i = 0; i < args.length; i++) {
+			if (typeof args[i] !== 'string') {
+				args[i] = String(args[i]);
+			}
+		}
 
-    createScript (script) {
-        const scripts_cache = (this._scripts_cache ??= new Map());
+		return this._client.sendCommand(args);
+	}
 
-        const script_hash = RedisScript.getHash(script);
+	createScript (script) {
+		const scripts_cache = (this._scripts_cache ??= new Map());
 
-        if (scripts_cache.has(script_hash) === false) {
-            scripts_cache.set(
-                script_hash,
-                new RedisScript(
-                    this,
-                    script,
-                ),
-            );
-        }
+		const script_hash = RedisScript.getHash(script);
 
-        return scripts_cache.get(script_hash);
-    }
+		if (scripts_cache.has(script_hash) === false) {
+			scripts_cache.set(
+				script_hash,
+				new RedisScript(
+					this,
+					script,
+				),
+			);
+		}
 
-    /* async */ disconnect () {
-        return this._client.disconnect();
-    }
+		return scripts_cache.get(script_hash);
+	}
+
+	/* async */ disconnect () {
+		return this._client.disconnect();
+	}
 }
 
 for (const command of COMMANDS) {
-    RedisClient.prototype[command] = RedisClient.prototype[command.toUpperCase()] = async function (...args) {
-        const transform = TRANSFORM[command] ?? {};
+	RedisClient.prototype[command] = RedisClient.prototype[command.toUpperCase()] = async function (...args) {
+		const transform = TRANSFORM[command] ?? {};
 
-        if (typeof transform.input === 'function') {
-            args = transform.input(...args) ?? args;
-        }
+		if (typeof transform.input === 'function') {
+			args = transform.input(...args) ?? args;
+		}
 
-        const response = await this._client.sendCommand([
-            command,
-            ...args,
-        ]);
+		const response = await this._client.sendCommand([
+			command,
+			...args,
+		]);
 
-        if (typeof transform.output === 'function') {
-            return transform.output(response);
-        }
-        else {
-            return response;
-        }
-    };
+		if (typeof transform.output === 'function') {
+			return transform.output(response);
+		}
+		else {
+			return response;
+		}
+	};
 }
 
 RedisClient.prototype.MULTI = RedisClient.prototype.multi = function () {
-    return new RedisClientMulti(this);
+	return new RedisClientMulti(this);
 };
 
 for (const method of [
-    // commands
-    'subscribe',
-    'psubscribe',
-    'unsubscribe',
-    'punsubscribe',
-    'publish',
-    // methods
-    'scanIterator',
-    'hScanIterator',
-    'sScanIterator',
-    'zScanIterator',
+	// commands
+	'subscribe',
+	'psubscribe',
+	'unsubscribe',
+	'punsubscribe',
+	'publish',
+	// methods
+	'scanIterator',
+	'hScanIterator',
+	'sScanIterator',
+	'zScanIterator',
 ]) {
-    RedisClient.prototype[method] = RedisClient.prototype[method.toUpperCase()] = function (...args) {
-        return this._client[method](...args);
-    };
+	RedisClient.prototype[method] = RedisClient.prototype[method.toUpperCase()] = function (...args) {
+		return this._client[method](...args);
+	};
 }
 
 module.exports = RedisClient;

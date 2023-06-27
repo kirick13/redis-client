@@ -3,67 +3,73 @@ const COMMANDS  = require('./commands');
 const TRANSFORM = require('./transform');
 
 class RedisClientMulti {
-    constructor (redisClient) {
-        this._multi = redisClient._client.multi();
-        this._transforms = [];
-        this.queue_length = 0;
+	constructor (redisClient) {
+		this._multi = redisClient._client.multi();
+		this._transforms = [];
+		this.queue_length = 0;
 
-        this._names = null;
-    }
+		this._names = null;
+	}
 
-    as (field_name) {
-        this._names ??= {};
-        this._names[field_name] = this.queue_length - 1;
+	as (field_name) {
+		this._names ??= {};
+		this._names[field_name] = this.queue_length - 1;
 
-        return this;
-    }
+		return this;
+	}
 }
 
 for (const command of COMMANDS) {
-    RedisClientMulti.prototype[command] = RedisClientMulti.prototype[command.toUpperCase()] = function (...args) {
-        const transform = TRANSFORM[command] ?? {};
+	RedisClientMulti.prototype[command] = RedisClientMulti.prototype[command.toUpperCase()] = function (...args) {
+		const transform = TRANSFORM[command] ?? {};
 
-        if (typeof transform.input === 'function') {
-            args = transform.input(...args) ?? args;
-        }
+		if (typeof transform.input === 'function') {
+			args = transform.input(...args) ?? args;
+		}
 
-        this._multi.addCommand([
-            command,
-            ...args,
-        ]);
+		for (let i = 0; i < args.length; i++) {
+			if (typeof args[i] !== 'string') {
+				args[i] = String(args[i]);
+			}
+		}
 
-        if (typeof transform.output === 'function') {
-            this._transforms.push([
-                this.queue_length,
-                transform.output,
-            ]);
-        }
+		this._multi.addCommand([
+			command,
+			...args,
+		]);
 
-        this.queue_length++;
+		if (typeof transform.output === 'function') {
+			this._transforms.push([
+				this.queue_length,
+				transform.output,
+			]);
+		}
 
-        return this;
-    };
+		this.queue_length++;
+
+		return this;
+	};
 }
 
 RedisClientMulti.prototype.EXEC = RedisClientMulti.prototype.exec = async function () {
-    const result = await this._multi.EXEC();
+	const result = await this._multi.EXEC();
 
-    for (const [ index, transform ] of this._transforms) {
-        result[index] = transform(result[index]);
-    }
+	for (const [ index, transform ] of this._transforms) {
+		result[index] = transform(result[index]);
+	}
 
-    const names = this._names;
-    if (names) {
-        for (const key of Object.keys(names)) {
-            const index = names[key];
-            names[key] = result[index];
-        }
+	const names = this._names;
+	if (names) {
+		for (const key of Object.keys(names)) {
+			const index = names[key];
+			names[key] = result[index];
+		}
 
-        return names;
-    }
-    else {
-        return result;
-    }
+		return names;
+	}
+	else {
+		return result;
+	}
 };
 
 module.exports = RedisClientMulti;
