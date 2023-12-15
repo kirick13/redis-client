@@ -1,17 +1,42 @@
 {
 	"name": "@kirick/redis-client",
-	"version": "4.6.0-beta.2",
-	"description": "Slightly enhanced redis client for Node.js built on top of \"redis\" package.",
+	"version": "0.1.0-beta.1",
+	"description": "Enhanced redis client for Node.js built on top of \"redis\" package.",
 	"publishConfig": {
-		"access": "public",
-		"tag": "beta"
+		"access": "public"
 	},
-	"main": "main.js",
+	"main": "src/main.js",
+	"type": "module",
+	"exports": {
+		".": {
+			"import": "./src/main.js",
+			"require": "./dist/redis-client.cjs"
+		}
+	},
 	"engines": {
 		"node": ">=10.0.0"
 	},
 	"dependencies": {
 		"redis": "4.6.7"
+	},
+	"devDependencies": {
+		"@babel/eslint-parser": "7.21.8",
+		"eslint": "8.41.0",
+		"eslint-config-xo": "0.43.1",
+		"eslint-plugin-import": "2.27.5",
+		"eslint-plugin-node": "11.1.0",
+		"eslint-plugin-promise": "6.1.1",
+		"eslint-plugin-unicorn": "47.0.0",
+		"jest": "^29.7.0"
+	},
+	"scripts": {
+		"test": "bun run redis-up && bun run tools/create-commands.js && npm run test-node && bun test; bun run redis-down",
+		"test-node": "NODE_OPTIONS=--experimental-vm-modules jest",
+		"build": "bun run build-cjs",
+		"build-cjs": "bunx esbuild --bundle --platform=node --format=cjs --packages=external --outfile=dist/redis-client.cjs src/main.js",
+		"npm-publish": "bun run build && npm publish --tag beta",
+		"redis-up": "bun run redis-down; docker run --rm -d -p 49145:6379 --name redis-client-test redis:7-alpine",
+		"redis-down": "docker stop redis-client-test"
 	},
 	"repository": {
 		"type": "git",
@@ -19,9 +44,9 @@
 	},
 	"keywords": [
 		"redis",
-        "node",
+		"node",
 		"nodejs",
-        "client"
+		"client"
 	],
 	"author": "Daniil Kirichenko (https://twitter.com/kirickme)",
 	"license": "MIT",

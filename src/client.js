@@ -1,48 +1,94 @@
 
-const { createClient } = require('redis');
+import { createClient }                from 'redis';
+import { RedisClientCommandsExtended } from './client/commands.extended.js';
+import { RedisClientMulti }            from './client/multi.js';
+import {
+	RedisScript,
+	getScriptHash }                    from './client/script.js';
+import { updateArguments }             from './utils/args.js';
+import * as TRANSFORM                  from './utils/transform.js';
 
-const COMMANDS         = require('./commands');
-const RedisClientMulti = require('./multi');
-const RedisScript      = require('./script');
-const TRANSFORM        = require('./transform');
+export class RedisClient extends RedisClientCommandsExtended {
+	#options;
+	#redis_client;
 
-class RedisClient {
-	constructor (client_configuration) {
-		this._client_configuration = client_configuration;
+	#scripts_cache = new Map();
 
-		const client = this._client = createClient(client_configuration);
+	constructor(options) {
+		super(async (command, ...args) => {
+			// eslint-disable-next-line import/namespace
+			const transform = TRANSFORM[command] ?? {};
 
-		client.on(
-			'error',
-			error => console.error('[REDIS CLIENT]', error),
-		);
-
-		client.connect();
-	}
-
-	duplicate () {
-		return new RedisClient(
-			this._client_configuration,
-		);
-	}
-
-	sendCommand (...args) {
-		for (let i = 0; i < args.length; i++) {
-			if (typeof args[i] !== 'string') {
-				args[i] = String(args[i]);
+			if (typeof transform.input === 'function') {
+				args = transform.input(...args) ?? args;
 			}
-		}
 
-		return this._client.sendCommand(args);
+			updateArguments(command, args);
+
+			const response = await this.#redis_client.sendCommand([
+				command,
+				...args,
+			]);
+
+			if (typeof transform.output === 'function') {
+				return transform.output(response);
+			}
+
+			return response;
+		});
+
+		this.#options = options;
+
+		this.#redis_client = createClient(options);
+
+		this.#redis_client.on(
+			'error',
+			(error) => console.error('[@kirick/redis-client]', error),
+		);
+
+		this.#redis_client.connect();
 	}
 
-	createScript (script) {
-		const scripts_cache = (this._scripts_cache ??= new Map());
+	get redis_client() {
+		return this.#redis_client;
+	}
 
-		const script_hash = RedisScript.getHash(script);
+	/**
+	 * Duplicates client with the same options as the current client.
+	 * @returns RedisClient
+	 */
+	duplicate() {
+		return new RedisClient(
+			this.#options,
+		);
+	}
 
-		if (scripts_cache.has(script_hash) === false) {
-			scripts_cache.set(
+	/**
+	 * Sends raw command to the Redis server and returns raw response.
+	 * @async
+	 * @param {string} command Command name.
+	 * @param {...any} args Command arguments.
+	 * @returns {any} Response from the Redis server.
+	 */
+	async sendCommand(command, ...args) {
+		updateArguments(command, args);
+
+		return this.#redis_client.sendCommand([
+			command,
+			...args,
+		]);
+	}
+
+	/**
+	 * Creates a script to be executed using the EVALSHA commands.
+	 * @param {string} script Lua script to upload.
+	 * @returns {RedisScript} RedisScript instance.
+	 */
+	createScript(script) {
+		const script_hash = getScriptHash(script);
+
+		if (this.#scripts_cache.has(script_hash) === false) {
+			this.#scripts_cache.set(
 				script_hash,
 				new RedisScript(
 					this,
@@ -51,56 +97,35 @@ class RedisClient {
 			);
 		}
 
-		return scripts_cache.get(script_hash);
+		return this.#scripts_cache.get(script_hash);
 	}
 
-	/* async */ disconnect () {
-		return this._client.disconnect();
+	/**
+	 * Disconnects from the Redis server.
+	 * @async
+	 */
+	async disconnect() {
+		return this.#redis_client.disconnect();
+	}
+
+	/**
+	 * Creates new MULTI transaction locally, without sending any commands to the Redis server.
+	 *
+	 * Transaction will be sent to the Redis server when EXEC methid will be called.
+	 * @returns {RedisClientMulti}
+	 */
+	MULTI() {
+		return new RedisClientMulti(this);
+	}
+
+	/**
+	 * Creates new MULTI transaction locally, without sending any commands to the Redis server.
+	 *
+	 * Transaction will be sent to the Redis server when EXEC methid will be called.
+	 * @returns {RedisClientMulti}
+	 */
+	multi() {
+		return this.MULTI();
 	}
 }
 
-for (const command of COMMANDS) {
-	RedisClient.prototype[command] = RedisClient.prototype[command.toUpperCase()] = async function (...args) {
-		const transform = TRANSFORM[command] ?? {};
-
-		if (typeof transform.input === 'function') {
-			args = transform.input(...args) ?? args;
-		}
-
-		const response = await this._client.sendCommand([
-			command,
-			...args,
-		]);
-
-		if (typeof transform.output === 'function') {
-			return transform.output(response);
-		}
-		else {
-			return response;
-		}
-	};
-}
-
-RedisClient.prototype.MULTI = RedisClient.prototype.multi = function () {
-	return new RedisClientMulti(this);
-};
-
-for (const method of [
-	// commands
-	'subscribe',
-	'psubscribe',
-	'unsubscribe',
-	'punsubscribe',
-	'publish',
-	// methods
-	'scanIterator',
-	'hScanIterator',
-	'sScanIterator',
-	'zScanIterator',
-]) {
-	RedisClient.prototype[method] = RedisClient.prototype[method.toUpperCase()] = function (...args) {
-		return this._client[method](...args);
-	};
-}
-
-module.exports = RedisClient;
