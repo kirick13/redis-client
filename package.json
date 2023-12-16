@@ -1,6 +1,6 @@
 {
 	"name": "@kirick/redis-client",
-	"version": "0.1.0-beta.1",
+	"version": "0.1.0-beta.3",
 	"description": "Enhanced redis client for Node.js built on top of \"redis\" package.",
 	"publishConfig": {
 		"access": "public"
@@ -14,7 +14,7 @@
 		}
 	},
 	"engines": {
-		"node": ">=10.0.0"
+		"node": ">=11.0.0"
 	},
 	"dependencies": {
 		"redis": "4.6.7"
@@ -34,7 +34,7 @@
 		"test-node": "NODE_OPTIONS=--experimental-vm-modules jest",
 		"build": "bun run build-cjs",
 		"build-cjs": "bunx esbuild --bundle --platform=node --format=cjs --packages=external --outfile=dist/redis-client.cjs src/main.js",
-		"npm-publish": "bun run build && npm publish --tag beta",
+		"npm-publish": "bun run build && bun run test && npm publish --tag beta",
 		"redis-up": "bun run redis-down; docker run --rm -d -p 49145:6379 --name redis-client-test redis:7-alpine",
 		"redis-down": "docker stop redis-client-test"
 	},

@@ -23,12 +23,10 @@ export class RedisClient extends RedisClientCommandsExtended {
 				args = transform.input(...args) ?? args;
 			}
 
-			updateArguments(command, args);
-
-			const response = await this.#redis_client.sendCommand([
+			const response = await this.sendCommand(
 				command,
 				...args,
-			]);
+			);
 
 			if (typeof transform.output === 'function') {
 				return transform.output(response);

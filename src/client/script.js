@@ -42,8 +42,6 @@ export class RedisScript {
 			);
 		}
 		catch (error) {
-			console.error(error);
-
 			if (error.toString().includes('NOSCRIPT')) {
 				await this.#loadScript();
 

@@ -19,7 +19,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.js
 var main_exports = {};
 __export(main_exports, {
-  createClient: () => createClient2
+  RedisClient: () => RedisClient
 });
 module.exports = __toCommonJS(main_exports);
 
@@ -6248,9 +6248,11 @@ function updateArguments(command, args) {
   for (const [index, arg] of args.entries()) {
     if (typeof arg === "number" && Number.isNaN(arg) !== true) {
       args[index] = String(arg);
+    } else if (Buffer.isBuffer(arg) || arg instanceof ArrayBuffer) {
+      args[index] = arg;
     } else if (typeof arg !== "string") {
       throw new TypeError(
-        `Argument #${index + 1} of command "${command}" must be a string or a number.`
+        `Argument #${index + 1} of command "${command}" must be a string, non-NaN number, ArrayBuffer or Node.JS Buffer.`
       );
     }
   }
@@ -12032,7 +12034,6 @@ var RedisScript = class {
         ...args
       );
     } catch (error) {
-      console.error(error);
       if (error.toString().includes("NOSCRIPT")) {
         await this.#loadScript();
         return this.run(...args);
@@ -12056,11 +12057,10 @@ var RedisClient = class _RedisClient extends RedisClientCommandsExtended {
       if (typeof transform.input === "function") {
         args = transform.input(...args) ?? args;
       }
-      updateArguments(command, args);
-      const response = await this.#redis_client.sendCommand([
+      const response = await this.sendCommand(
         command,
         ...args
-      ]);
+      );
       if (typeof transform.output === "function") {
         return transform.output(response);
       }
@@ -12144,12 +12144,7 @@ var RedisClient = class _RedisClient extends RedisClientCommandsExtended {
     return this.MULTI();
   }
 };
-
-// src/main.js
-function createClient2(options) {
-  return new RedisClient(options);
-}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  createClient
+  RedisClient
 });

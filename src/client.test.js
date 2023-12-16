@@ -209,6 +209,73 @@ describe('script', () => {
 	});
 });
 
+function promiseWithResolvers() {
+	let resolve;
+	let reject;
+
+	const promise = new Promise((...args) => {
+		[ resolve, reject ] = args;
+	});
+
+	return {
+		promise,
+		resolve,
+		reject,
+	};
+}
+async function testPublish(value) {
+	const subscribeClient = client.duplicate();
+
+	const { promise, resolve, reject } = promiseWithResolvers();
+
+	setTimeout(
+		() => {
+			reject(
+				new Error('timeout'),
+			);
+		},
+		1000,
+	);
+
+	await subscribeClient.subscribe(
+		'test-channel',
+		(message) => {
+			resolve(message);
+		},
+		value instanceof Buffer,
+	);
+
+	await client.PUBLISH(
+		'test-channel',
+		value,
+	);
+
+	const result = await promise;
+
+	await subscribeClient.disconnect();
+
+	return result;
+}
+describe('subscribe', () => {
+	test('string', async () => {
+		const value = 'test-message';
+		const result = await testPublish(value);
+
+		expect(result).toBe(value);
+	});
+
+	test('buffer', async () => {
+		const value = Buffer.from([ 0xDE, 0xAD, 0xBE, 0xEF ]);
+		const result = await testPublish(value);
+
+		expect(
+			result.toString('hex'),
+		).toBe(
+			value.toString('hex'),
+		);
+	});
+});
+
 afterAll(async () => {
 	try {
 		await client.disconnect();
