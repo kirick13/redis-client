@@ -1,32 +1,22 @@
 
-/* global describe, test, expect, afterAll */
+/* global describe, test, expect */
+/* eslint-disable jsdoc/require-jsdoc */
 
-import { RedisClient } from './client.js';
+import { redisClient } from '../test/create-client.js';
 
-const client = new RedisClient({
-	socket: {
-		host: 'localhost',
-		port: 49145,
-	},
+test('sendCommand', async () => {
+	const result = await redisClient.sendCommand('PING');
+
+	expect(result).toBe('PONG');
 });
 
-describe('ping', () => {
-	test('sendCommand() method', async () => {
-		const result = await client.sendCommand('PING');
-
-		expect(result).toBe('PONG');
-	});
-
-	test('PING() method', async () => {
-		const result = await client.PING();
-
-		expect(result).toBe('PONG');
-	});
-});
-
-describe('multi', () => {
-	test('MULTI() method', async () => {
-		const result = await client.MULTI().SET('test', 'test').GET('test').DEL('test').EXEC();
+describe('transactions', () => {
+	test('main', async () => {
+		const result = await redisClient.createTransaction()
+			.string.set('test', 'test')
+			.string.get('test')
+			.addCommand('DEL', 'test')
+			.execute();
 
 		expect(result).toBeInstanceOf(Array);
 		expect(result).toHaveLength(3);
@@ -36,53 +26,53 @@ describe('multi', () => {
 	});
 
 	test('named results', async () => {
-		const result = await client.MULTI()
-			.SET('test', 'test')
-			.GET('test')
-			.DEL('test').as('test')
-			.EXEC();
+		const result = await redisClient.createTransaction()
+			.string.set('test', 'test')
+			.addCommand('GET', 'test').as('test')
+			.addCommand('DEL', 'test')
+			.execute();
 
 		expect(result).toBeInstanceOf(Object);
 		expect(Object.keys(result)).toHaveLength(1);
 		expect(result).toHaveProperty('test');
-		expect(result.test).toBe(1);
+		expect(result.test).toBe('test');
 	});
 });
 
 /* eslint-disable function-call-argument-newline */
-await client.MULTI()
-	.MSET(
+await redisClient.createTransaction()
+	.addCommand(
+		'MSET',
 		'key1', '1',
 		'key2', '2',
 		'key3', '3',
 	)
-	.HSET(
+	.addCommand(
+		'HSET',
 		'test-hash',
-		{
-			user_id: 1,
-			nick: 'deadbeef',
-		},
+		'user_id', '1',
+		'nick', 'deadbeef',
 	)
-	.SADD(
+	.addCommand(
+		'SADD',
 		'test-set',
 		'member1',
 		'member2',
 	)
-	.ZADD(
+	.addCommand(
+		'ZADD',
 		'test-sorted-set',
-		1,
-		'member1',
-		2,
-		'member2',
+		'1', 'member1',
+		'2', 'member2',
 	)
-	.EXEC();
+	.execute();
 /* eslint-enable function-call-argument-newline */
 
 describe('iterators', () => {
 	describe('entire database', () => {
 		test('all', async () => {
 			let count = 0;
-			for await (const key of client.scanIterator()) {
+			for await (const key of redisClient.scanIterator()) {
 				expect(typeof key).toBe('string');
 				count++;
 			}
@@ -93,7 +83,7 @@ describe('iterators', () => {
 		test('by type', async () => {
 			let count = 0;
 			// eslint-disable-next-line no-unused-vars
-			for await (const _ of client.scanIterator({ TYPE: 'hash' })) {
+			for await (const _ of redisClient.scanIterator({ TYPE: 'hash' })) {
 				count++;
 			}
 
@@ -103,7 +93,7 @@ describe('iterators', () => {
 		test('by pattern', async () => {
 			let count = 0;
 			// eslint-disable-next-line no-unused-vars
-			for await (const _ of client.scanIterator({ MATCH: 'key*' })) {
+			for await (const _ of redisClient.scanIterator({ MATCH: 'key*' })) {
 				count++;
 			}
 
@@ -114,7 +104,7 @@ describe('iterators', () => {
 	describe('hash', () => {
 		test('all', async () => {
 			let count = 0;
-			for await (const tuple of client.hScanIterator('test-hash')) {
+			for await (const tuple of redisClient.hScanIterator('test-hash')) {
 				expect(typeof tuple).toBe('object');
 
 				expect(tuple).toHaveProperty('field');
@@ -132,7 +122,7 @@ describe('iterators', () => {
 		test('by pattern', async () => {
 			let count = 0;
 			// eslint-disable-next-line no-unused-vars
-			for await (const _ of client.hScanIterator('test-hash', { MATCH: 'u*' })) {
+			for await (const _ of redisClient.hScanIterator('test-hash', { MATCH: 'u*' })) {
 				count++;
 			}
 
@@ -143,7 +133,7 @@ describe('iterators', () => {
 	describe('set', () => {
 		test('all', async () => {
 			let count = 0;
-			for await (const member of client.sScanIterator('test-set')) {
+			for await (const member of redisClient.sScanIterator('test-set')) {
 				expect(typeof member).toBe('string');
 
 				count++;
@@ -155,7 +145,7 @@ describe('iterators', () => {
 		test('by pattern', async () => {
 			let count = 0;
 			// eslint-disable-next-line no-unused-vars
-			for await (const _ of client.sScanIterator('test-set', { MATCH: 'member1*' })) {
+			for await (const _ of redisClient.sScanIterator('test-set', { MATCH: 'member1*' })) {
 				count++;
 			}
 
@@ -166,7 +156,7 @@ describe('iterators', () => {
 	describe('sorted set', () => {
 		test('all', async () => {
 			let count = 0;
-			for await (const tuple of client.zScanIterator('test-sorted-set')) {
+			for await (const tuple of redisClient.zScanIterator('test-sorted-set')) {
 				expect(typeof tuple).toBe('object');
 
 				expect(tuple).toHaveProperty('value');
@@ -184,7 +174,7 @@ describe('iterators', () => {
 		test('by pattern', async () => {
 			let count = 0;
 			// eslint-disable-next-line no-unused-vars
-			for await (const _ of client.zScanIterator('test-sorted-set', { MATCH: 'member1*' })) {
+			for await (const _ of redisClient.zScanIterator('test-sorted-set', { MATCH: 'member1*' })) {
 				count++;
 			}
 
@@ -194,7 +184,7 @@ describe('iterators', () => {
 });
 
 describe('script', () => {
-	const redisScript = client.createScript('return redis.call("GET", ARGV[1])');
+	const redisScript = redisClient.createScript('return redis.call("GET", ARGV[1])');
 
 	test('existing key', async () => {
 		const result = await redisScript.run('key1');
@@ -224,7 +214,7 @@ function promiseWithResolvers() {
 	};
 }
 async function testPublish(value) {
-	const subscribeClient = client.duplicate();
+	const subscribeClient = redisClient.duplicate();
 
 	const { promise, resolve, reject } = promiseWithResolvers();
 
@@ -245,7 +235,8 @@ async function testPublish(value) {
 		value instanceof Buffer,
 	);
 
-	await client.PUBLISH(
+	await redisClient.sendCommand(
+		'PUBLISH',
 		'test-channel',
 		value,
 	);
@@ -274,11 +265,4 @@ describe('subscribe', () => {
 			value.toString('hex'),
 		);
 	});
-});
-
-afterAll(async () => {
-	try {
-		await client.disconnect();
-	}
-	catch {}
 });

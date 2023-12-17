@@ -35,7 +35,8 @@ export class RedisScript {
 		updateArguments('EVALSHA', args);
 
 		try {
-			return await this.#redisClient.EVALSHA(
+			return await this.#redisClient.sendCommand(
+				'EVALSHA',
 				this.#script_sha1,
 				0,
 				...args,
@@ -53,6 +54,10 @@ export class RedisScript {
 	}
 
 	async #loadScript() {
-		this.#script_sha1 = await this.#redisClient.SCRIPT('LOAD', this.#script);
+		this.#script_sha1 = await this.#redisClient.sendCommand(
+			'SCRIPT',
+			'LOAD',
+			this.#script,
+		);
 	}
 }
