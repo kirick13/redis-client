@@ -1,6 +1,6 @@
 
 // Path: src/client/transaction/string.js
-// This file was automatically generated at Sun, 17 Dec 2023 15:05:27 GMT by tools/create-commands.js
+// This file was automatically generated at Mon, 18 Dec 2023 13:44:00 GMT by tools/create-commands.js
 
 import { retrieveCommandArguments } from '../../utils/args.js';
 import getMany from '../commands/string/get-many.js';
@@ -40,16 +40,29 @@ export class RedisClientTransactionStringCommands {
 	}
 
 	/**
+	 * @typedef StringSetOptions
+	 * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
+	 * @property {"keep" | StringSetOptionsExpire} [expire] -
+	 */
+	/**
+	 * @typedef StringSetOptionsExpire
+	 * @property {number} [in] Set the specified expire time in seconds.
+	 * @property {number} [in_ms] Set the specified expire time in milliseconds.
+	 * @property {number} [at] Set the specified Unix timestamp in seconds.
+	 * @property {number} [at_ms] Set the specified Unix timestamp in milliseconds.
+	 */
+	/**
 	 * Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.
 	 *
 	 * Complexity: O(1)
 	 *
 	 * @param {string} key Key name.
 	 * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+	 * @param {StringSetOptions} [options] -
 	 * @returns {RedisClientTransaction} RedisClientTransaction instance.
 	 */
-	set(key, value) {
-		return this.#execute(set, [ key, value ]);
+	set(key, value, options) {
+		return this.#execute(set, [ key, value, options ]);
 	}
 
 	/**

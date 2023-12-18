@@ -1,6 +1,6 @@
 
 /* global Bun */
-/* eslint-disable jsdoc/require-jsdoc */
+/* eslint-disable jsdoc/require-jsdoc, max-depth */
 /* eslint-disable no-await-in-loop */
 
 import { readdir } from 'node:fs/promises';
@@ -11,7 +11,7 @@ const SECTIONS = [
 ];
 
 const METHOD_NAME_REGEXP = /export\s+default\s+function(?:\s*\*)?\s+([\dA-Za-z]+)\s*\(/m;
-const JSDOC_PARAM_NAME_REGEXP = /@param\s+{[^}]+}\s+(\S+)/;
+const JSDOC_PARAM_NAME_REGEXP = /@param\s+{[^}]+}\s+(?:\[\s*)?([\d_a-z]+)/;
 const JSDOC_PARAM_IS_SPREAD_REGEXP = /@param\s+{\.{3}/;
 
 const FILES = new Map();
@@ -92,6 +92,7 @@ async function processCommands({
 			const jsdoc_lines = [];
 			const method_arguments = [];
 
+			let is_method_jsdoc = true;
 			for (
 				let line_id = export_line_number - 1;
 				line_id >= 0;
@@ -99,37 +100,45 @@ async function processCommands({
 			) {
 				const line = content_lines[line_id];
 
-				if (
-					(
-						line.startsWith(' * @async')
-						&& is_async !== true
-					)
-					|| line.startsWith(' * @yields')
+				if (is_method_jsdoc) {
+					if (
+						(
+							line.startsWith(' * @async')
+							&& is_async !== true
+						)
+						|| line.startsWith(' * @yields')
+					) {
+						continue;
+					}
+
+					if (
+						line.startsWith(' * @returns')
+						&& returns !== undefined
+					) {
+						jsdoc_lines.unshift(`\t * @returns ${returns}`);
+						continue;
+					}
+
+					if (line.startsWith(' * @param')) {
+						const [ , argument_name ] = line.match(JSDOC_PARAM_NAME_REGEXP);
+						const is_argument_spread = JSDOC_PARAM_IS_SPREAD_REGEXP.test(line);
+
+						method_arguments.unshift(
+							`${is_argument_spread ? '...' : ''}${argument_name}`,
+						);
+					}
+				}
+				else if (
+					!line.startsWith('/**')
+					&& !line.startsWith(' *')
 				) {
 					continue;
-				}
-
-				if (
-					line.startsWith(' * @returns')
-					&& returns !== undefined
-				) {
-					jsdoc_lines.unshift(`\t * @returns ${returns}`);
-					continue;
-				}
-
-				if (line.startsWith(' * @param')) {
-					const [ , argument_name ] = line.match(JSDOC_PARAM_NAME_REGEXP);
-					const is_argument_spread = JSDOC_PARAM_IS_SPREAD_REGEXP.test(line);
-
-					method_arguments.unshift(
-						`${is_argument_spread ? '...' : ''}${argument_name}`,
-					);
 				}
 
 				jsdoc_lines.unshift(`\t${line}`);
 
 				if (line.startsWith('/**')) {
-					break;
+					is_method_jsdoc = false;
 				}
 			}
 

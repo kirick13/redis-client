@@ -70,12 +70,134 @@ function* getMany(...keys) {
 }
 
 // src/client/commands/string/set.js
-function set(key, value) {
-  return [
+var import_valibot = require("valibot");
+
+// src/utils/lodash/isObjectLike.js
+function isObjectLike(value) {
+  return Boolean(value) && typeof value === "object";
+}
+
+// src/utils/lodash/isPlainObject.js
+var objectTag = "[object Object]";
+function isHostObject(value) {
+  let result = false;
+  if (value != null && typeof value.toString !== "function") {
+    try {
+      result = Boolean(String(value));
+    } catch {
+    }
+  }
+  return result;
+}
+function overArgument(function_, transform) {
+  return function(arg) {
+    return function_(transform(arg));
+  };
+}
+var functionProto = Function.prototype;
+var objectProto = Object.prototype;
+var functionToString = functionProto.toString;
+var { hasOwnProperty } = objectProto;
+var objectCtorString = functionToString.call(Object);
+var objectToString = objectProto.toString;
+var getPrototype = overArgument(Object.getPrototypeOf, Object);
+function isPlainObject(value) {
+  if (!isObjectLike(value) || objectToString.call(value) != objectTag || isHostObject(value)) {
+    return false;
+  }
+  const proto = getPrototype(value);
+  if (proto === null) {
+    return true;
+  }
+  const Ctor = hasOwnProperty.call(proto, "constructor") && proto.constructor;
+  return typeof Ctor === "function" && Ctor instanceof Ctor && functionToString.call(Ctor) == objectCtorString;
+}
+
+// src/client/commands/string/set.js
+var optionsValidator = (0, import_valibot.object)(
+  {
+    existing: (0, import_valibot.optional)(
+      (0, import_valibot.boolean)()
+    ),
+    expire: (0, import_valibot.optional)(
+      (0, import_valibot.union)(
+        [
+          (0, import_valibot.literal)("keep"),
+          (0, import_valibot.object)(
+            {
+              in: (0, import_valibot.number)()
+            },
+            (0, import_valibot.never)()
+          ),
+          (0, import_valibot.object)(
+            {
+              in_ms: (0, import_valibot.number)()
+            },
+            (0, import_valibot.never)()
+          ),
+          (0, import_valibot.object)(
+            {
+              at: (0, import_valibot.number)()
+            },
+            (0, import_valibot.never)()
+          ),
+          (0, import_valibot.object)(
+            {
+              at_ms: (0, import_valibot.number)()
+            },
+            (0, import_valibot.never)()
+          )
+        ],
+        'Property "expire" must be either "keep" or an object with one of the following properties: "in", "in_ms", "at", "at_ms".'
+      )
+    )
+  },
+  (0, import_valibot.never)('Unknown property found in "options" argument. Only "existing" and "expire" are allowed.')
+);
+function set(key, value, options = {}) {
+  options = (0, import_valibot.parse)(
+    optionsValidator,
+    options
+  );
+  const args = [
     "SET",
     key,
     value
   ];
+  switch (options.existing) {
+    case true:
+      args.push("XX");
+      break;
+    case false:
+      args.push("NX");
+      break;
+  }
+  if (options.expire === "keep") {
+    args.push("KEEPTTL");
+  } else if (isPlainObject(options.expire)) {
+    if (options.expire.in) {
+      args.push(
+        "EX",
+        options.expire.in
+      );
+    } else if (options.expire.in_ms) {
+      args.push(
+        "PX",
+        options.expire.in_ms
+      );
+    } else if (options.expire.at) {
+      args.push(
+        "EXAT",
+        options.expire.at
+      );
+    } else if (options.expire.at_ms) {
+      args.push(
+        "PXAT",
+        options.expire.at_ms
+      );
+    }
+  }
+  return args;
 }
 
 // src/client/commands/string/get.js
@@ -112,6 +234,18 @@ var RedisClientStringCommands = class {
     return this.#execute(getMany, [...keys]);
   }
   /**
+   * @typedef StringSetOptions
+   * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
+   * @property {"keep" | StringSetOptionsExpire} [expire] -
+   */
+  /**
+   * @typedef StringSetOptionsExpire
+   * @property {number} [in] Set the specified expire time in seconds.
+   * @property {number} [in_ms] Set the specified expire time in milliseconds.
+   * @property {number} [at] Set the specified Unix timestamp in seconds.
+   * @property {number} [at_ms] Set the specified Unix timestamp in milliseconds.
+   */
+  /**
    * Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.
    *
    * Complexity: O(1)
@@ -119,10 +253,11 @@ var RedisClientStringCommands = class {
    * @async
    * @param {string} key Key name.
    * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+   * @param {StringSetOptions} [options] -
    * @returns {Promise<"OK" | null>} "OK" if SET was executed correctly, otherwise null.
    */
-  set(key, value) {
-    return this.#execute(set, [key, value]);
+  set(key, value, options) {
+    return this.#execute(set, [key, value, options]);
   }
   /**
    * Returns the string value of a key.
@@ -196,16 +331,29 @@ var RedisClientTransactionStringCommands = class {
     return this.#execute(getMany, [...keys]);
   }
   /**
+   * @typedef StringSetOptions
+   * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
+   * @property {"keep" | StringSetOptionsExpire} [expire] -
+   */
+  /**
+   * @typedef StringSetOptionsExpire
+   * @property {number} [in] Set the specified expire time in seconds.
+   * @property {number} [in_ms] Set the specified expire time in milliseconds.
+   * @property {number} [at] Set the specified Unix timestamp in seconds.
+   * @property {number} [at_ms] Set the specified Unix timestamp in milliseconds.
+   */
+  /**
    * Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.
    *
    * Complexity: O(1)
    *
    * @param {string} key Key name.
    * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+   * @param {StringSetOptions} [options] -
    * @returns {RedisClientTransaction} RedisClientTransaction instance.
    */
-  set(key, value) {
-    return this.#execute(set, [key, value]);
+  set(key, value, options) {
+    return this.#execute(set, [key, value, options]);
   }
   /**
    * Returns the string value of a key.

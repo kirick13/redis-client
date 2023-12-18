@@ -1,4 +1,6 @@
 
 .eslintrc.cjs
+src/**/.*
 tools/
+test/
 **/*.test.js

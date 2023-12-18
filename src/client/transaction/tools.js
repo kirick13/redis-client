@@ -1,6 +1,6 @@
 
 // Path: src/client/transaction/tools.js
-// This file was automatically generated at Sun, 17 Dec 2023 15:05:27 GMT by tools/create-commands.js
+// This file was automatically generated at Mon, 18 Dec 2023 13:44:00 GMT by tools/create-commands.js
 
 import { retrieveCommandArguments } from '../../utils/args.js';
 import ping from '../commands/tools/ping.js';

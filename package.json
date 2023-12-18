@@ -1,6 +1,6 @@
 {
 	"name": "@kirick/redis-client",
-	"version": "0.1.0-beta.4",
+	"version": "0.1.0-beta.5",
 	"description": "Enhanced redis client for Node.js built on top of \"redis\" package.",
 	"publishConfig": {
 		"access": "public"
@@ -17,7 +17,8 @@
 		"node": ">=11.0.0"
 	},
 	"dependencies": {
-		"redis": "4.6.7"
+		"redis": "4.6.7",
+		"valibot": "0.24.1"
 	},
 	"devDependencies": {
 		"@babel/eslint-parser": "7.21.8",
