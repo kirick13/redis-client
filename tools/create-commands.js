@@ -129,8 +129,11 @@ async function processCommands({
 					}
 				}
 				else if (
-					!line.startsWith('/**')
-					&& !line.startsWith(' *')
+					(
+						line.startsWith('/**')
+						|| line.startsWith(' *')
+					) !== true
+					|| line.startsWith(' * @typedef {')
 				) {
 					continue;
 				}
@@ -170,6 +173,7 @@ async function processCommands({
 			'',
 			'/**',
 			...section_file.typedefs.map((typedef) => ` * @typedef ${typedef}`),
+			' * @typedef {import("../../utils/args.js").RedisCommandArgument} RedisCommandArgument',
 			' */',
 			'',
 			`export class ${target[0].toUpperCase()}${target.slice(1)}${section[0].toUpperCase()}${section.slice(1)}Commands {`,

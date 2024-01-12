@@ -1,6 +1,6 @@
 
 // Path: src/client/transaction/string.js
-// This file was automatically generated at Mon, 18 Dec 2023 13:44:00 GMT by tools/create-commands.js
+// This file was automatically generated at Fri, 12 Jan 2024 12:36:34 GMT by tools/create-commands.js
 
 import { retrieveCommandArguments } from '../../utils/args.js';
 import getMany from '../commands/string/get-many.js';
@@ -9,6 +9,7 @@ import get from '../commands/string/get.js';
 
 /**
  * @typedef {import('../transaction.js').RedisClientTransaction} RedisClientTransaction
+ * @typedef {import("../../utils/args.js").RedisCommandArgument} RedisCommandArgument
  */
 
 export class RedisClientTransactionStringCommands {
@@ -40,6 +41,8 @@ export class RedisClientTransactionStringCommands {
 	}
 
 	/**
+	 */
+	/**
 	 * @typedef StringSetOptions
 	 * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
 	 * @property {"keep" | StringSetOptionsExpire} [expire] -
@@ -57,7 +60,7 @@ export class RedisClientTransactionStringCommands {
 	 * Complexity: O(1)
 	 *
 	 * @param {string} key Key name.
-	 * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+	 * @param {RedisCommandArgument} value Value to set.
 	 * @param {StringSetOptions} [options] -
 	 * @returns {RedisClientTransaction} RedisClientTransaction instance.
 	 */

@@ -1,12 +1,13 @@
 
 // Path: src/client/commands/tools.js
-// This file was automatically generated at Mon, 18 Dec 2023 13:44:00 GMT by tools/create-commands.js
+// This file was automatically generated at Fri, 12 Jan 2024 12:36:34 GMT by tools/create-commands.js
 
 import { retrieveCommandArguments } from '../../utils/args.js';
 import ping from '../commands/tools/ping.js';
 
 /**
  * @typedef {import('../../client.js').RedisClient} RedisClient
+ * @typedef {import("../../utils/args.js").RedisCommandArgument} RedisCommandArgument
  */
 
 export class RedisClientToolsCommands {

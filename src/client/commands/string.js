@@ -1,6 +1,6 @@
 
 // Path: src/client/commands/string.js
-// This file was automatically generated at Mon, 18 Dec 2023 13:44:00 GMT by tools/create-commands.js
+// This file was automatically generated at Fri, 12 Jan 2024 12:36:34 GMT by tools/create-commands.js
 
 import { retrieveCommandArguments } from '../../utils/args.js';
 import getMany from '../commands/string/get-many.js';
@@ -9,6 +9,7 @@ import get from '../commands/string/get.js';
 
 /**
  * @typedef {import('../../client.js').RedisClient} RedisClient
+ * @typedef {import("../../utils/args.js").RedisCommandArgument} RedisCommandArgument
  */
 
 export class RedisClientStringCommands {
@@ -40,6 +41,8 @@ export class RedisClientStringCommands {
 	}
 
 	/**
+	 */
+	/**
 	 * @typedef StringSetOptions
 	 * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
 	 * @property {"keep" | StringSetOptionsExpire} [expire] -
@@ -58,7 +61,7 @@ export class RedisClientStringCommands {
 	 *
 	 * @async
 	 * @param {string} key Key name.
-	 * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+	 * @param {RedisCommandArgument} value Value to set.
 	 * @param {StringSetOptions} [options] -
 	 * @returns {Promise<"OK" | null>} "OK" if SET was executed correctly, otherwise null.
 	 */

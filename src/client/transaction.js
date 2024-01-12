@@ -1,14 +1,16 @@
 
+import { updateArguments }                      from '../utils/args.js';
 import { isGenerator }                          from '../utils/generators.js';
 import { RedisClientTransactionStringCommands } from './transaction/string.js';
 import { RedisClientTransactionToolsCommands }  from './transaction/tools.js';
 
 /**
  * @typedef {import('../client.js').RedisClient} RedisClient
+ * @typedef {import('../utils/args.js').RedisClient} RedisCommandArgument
  */
 
 export class RedisClientTransaction {
-	#redis_client_multi;
+	#rawClientMulti;
 	#generators = [];
 	#queue_length = 0;
 	#custom_names = null;
@@ -17,7 +19,7 @@ export class RedisClientTransaction {
 	 * @param {RedisClient} redisClient RedisClient instance.
 	 */
 	constructor(redisClient) {
-		this.#redis_client_multi = redisClient.redis_client.MULTI();
+		this.#rawClientMulti = redisClient.rawClient.MULTI();
 	}
 
 	get queue_length() {
@@ -27,7 +29,7 @@ export class RedisClientTransaction {
 	/**
 	 * Adds command to the transaction.
 	 * @param {string} command Command name.
-	 * @param {...(string | number | ArrayBuffer | Buffer)} args Command arguments.
+	 * @param {...RedisCommandArgument} args Command arguments.
 	 * @returns {RedisClientTransaction} RedisClientTransaction instance.
 	 */
 	addCommand(command, ...args) {
@@ -44,7 +46,9 @@ export class RedisClientTransaction {
 			}
 		}
 
-		this.#redis_client_multi.addCommand([
+		updateArguments(command, args);
+
+		this.#rawClientMulti.addCommand([
 			command,
 			...args,
 		]);
@@ -84,7 +88,7 @@ export class RedisClientTransaction {
 	 * @returns {Array | { [key: string]: any }} Array, if no custom names were set, otherwise Object.
 	 */
 	async execute() {
-		const result = await this.#redis_client_multi.EXEC();
+		const result = await this.#rawClientMulti.EXEC();
 
 		for (const [ index, generator ] of this.#generators) {
 			result[index] = generator.next(

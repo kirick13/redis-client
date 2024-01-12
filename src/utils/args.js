@@ -1,6 +1,15 @@
 
 import { isGenerator } from './generators.js';
 
+/**
+ * @typedef {string | number | ArrayBuffer | Buffer} RedisCommandArgument
+ */
+
+/**
+ * Converts all arguments to strings.
+ * @param {string} command Command name.
+ * @param {RedisCommandArgument[]} args Command arguments.
+ */
 export function updateArguments(command, args) {
 	for (const [ index, arg ] of args.entries()) {
 		if (
@@ -23,6 +32,12 @@ export function updateArguments(command, args) {
 	}
 }
 
+/**
+ * Retrieves command arguments from the function result.
+ * @param {Function} fn Function to call.
+ * @param {any[]} fn_args Function arguments.
+ * @returns {RedisCommandArgument[]} Command arguments.
+ */
 export function retrieveCommandArguments(fn, fn_args) {
 	let command_args;
 

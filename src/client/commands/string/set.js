@@ -52,6 +52,10 @@ const optionsValidator = object(
 );
 
 /**
+ * @typedef {import("../../../utils/args.js").RedisCommandArgument} RedisCommandArgument
+ */
+
+/**
  * @typedef StringSetOptions
  * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
  * @property {"keep" | StringSetOptionsExpire} [expire] -
@@ -71,7 +75,7 @@ const optionsValidator = object(
  *
  * @async
  * @param {string} key Key name.
- * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+ * @param {RedisCommandArgument} value Value to set.
  * @param {StringSetOptions} [options] -
  * @returns {Promise<"OK" | null>} "OK" if SET was executed correctly, otherwise null.
  */

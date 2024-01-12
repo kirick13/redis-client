@@ -234,6 +234,8 @@ var RedisClientStringCommands = class {
     return this.#execute(getMany, [...keys]);
   }
   /**
+   */
+  /**
    * @typedef StringSetOptions
    * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
    * @property {"keep" | StringSetOptionsExpire} [expire] -
@@ -252,7 +254,7 @@ var RedisClientStringCommands = class {
    *
    * @async
    * @param {string} key Key name.
-   * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+   * @param {RedisCommandArgument} value Value to set.
    * @param {StringSetOptions} [options] -
    * @returns {Promise<"OK" | null>} "OK" if SET was executed correctly, otherwise null.
    */
@@ -305,6 +307,181 @@ var RedisClientToolsCommands = class {
   }
 };
 
+// src/client/lru.js
+var RedisClientLru = class {
+  #redisClient;
+  #key;
+  #epoch_length;
+  #epoch_count;
+  #redisScriptGet;
+  /**
+   * @param {import("../client.js").RedisClient} redisClient RedisClient instance.
+   * @param {object} options -
+   * @param {string} options.key Key name.
+   * @param {number} options.epoch_length Epoch length in milliseconds.
+   * @param {number} [options.epoch_count] Number of epochs to keep. Default: 10.
+   */
+  constructor(redisClient, {
+    key,
+    epoch_length,
+    epoch_count = 10
+  }) {
+    this.#redisClient = redisClient;
+    this.#key = key;
+    this.#epoch_length = epoch_length;
+    this.#epoch_count = epoch_count;
+    this.#redisScriptGet = redisClient.createScript(`
+			local key = ARGV[1]
+			local epoch_id_now = tonumber(ARGV[2])
+			local epoch_length = tonumber(ARGV[3])
+			local epoch_count = tonumber(ARGV[4])
+
+			local fields = {}
+			local response = {}
+			for i = 5, #ARGV do
+				table.insert(fields, ARGV[i])
+				table.insert(response, false)
+			end
+
+			local epoch_id = epoch_id_now
+			local hmset_args = {}
+
+			-- query epochs in reverse order
+			-- until we get all requested fields or reach the end of the cache
+			while #fields > 0 and epoch_id > epoch_id_now - epoch_count do
+				local key_epoch = key .. ':' .. epoch_id
+				local hdel_args = {}
+				local rdata = redis.call('HMGET', key_epoch, unpack(fields))
+				for i = 1, #rdata do
+					if rdata[i] ~= false then
+						-- if we got that data from older epoch
+						if epoch_id < epoch_id_now then
+							-- transfer data to current epoch
+							table.insert(hmset_args, fields[i])
+							table.insert(hmset_args, rdata[i])
+							-- remove data from this not-current-epoch
+							table.insert(hdel_args, fields[i])
+						end
+
+						response[i] = rdata[i]
+						fields[i] = nil
+					end
+				end
+
+				-- remove fields that we got from this not-current-epoch
+				if #hdel_args > 0 then
+					redis.call('HDEL', key_epoch, unpack(hdel_args))
+				end
+
+				epoch_id = epoch_id - 1
+			end
+
+			-- if we have data to trasnfer to current epoch
+			if #hmset_args > 0 then
+				local key_epoch = key .. ':' .. epoch_id_now
+				redis.call('HMSET', key_epoch, unpack(hmset_args))
+				redis.call('PEXPIREAT', key_epoch, (epoch_id_now + epoch_count) * epoch_length)
+			end
+
+			return response
+		`);
+  }
+  #getEpoch() {
+    return Math.floor(
+      Date.now() / this.#epoch_length
+    );
+  }
+  /**
+   * Sets value for the specified field.
+   * @param {string} field Field name.
+   * @param {RedisCommandArgument} value Field value.
+   * @returns {Promise<void>} -
+   */
+  set(field, value) {
+    return this.mset({
+      [field]: value
+    });
+  }
+  /**
+   * Sets multiple field-value pairs.
+   * @param {{ [key: string]: RedisCommandArgument }} object Object with field-value pairs.
+   * @returns {Promise<void>} -
+   */
+  async mset(object2) {
+    const epoch = this.#getEpoch();
+    const redisTransaction = this.#redisClient.createTransaction();
+    redisTransaction.addCommand(
+      "HMSET",
+      `${this.#key}:${epoch}`,
+      ...Object.entries(object2).flat()
+    );
+    redisTransaction.addCommand(
+      "PEXPIREAT",
+      `${this.#key}:${epoch}`,
+      (epoch + this.#epoch_count) * this.#epoch_length
+    );
+    for (let epoch_old = epoch - 1; epoch_old > epoch - this.#epoch_count; epoch_old--) {
+      redisTransaction.addCommand(
+        "HDEL",
+        `${this.#key}:${epoch_old}`,
+        ...Object.keys(object2)
+      );
+    }
+    await redisTransaction.execute();
+  }
+  async #rawGet(fields, single_value) {
+    const result = await this.#redisScriptGet.run(
+      this.#key,
+      this.#getEpoch(),
+      this.#epoch_length,
+      this.#epoch_count,
+      ...fields
+    );
+    if (single_value === true) {
+      return result[0];
+    }
+    const response = {};
+    for (let index = 0; index < fields.length; index++) {
+      response[fields[index]] = result[index];
+    }
+    return response;
+  }
+  /**
+   * Returns value for the specified field.
+   * @param {string} field Field name.
+   * @returns {Promise<string | null>} Field value. `null` if field does not exist.
+   */
+  get(field) {
+    return this.#rawGet(
+      [field],
+      true
+    );
+  }
+  /**
+   * Returns values for the specified fields.
+   * @param {...string} fields Field names.
+   * @returns {Promise<{ [ key: string ]: string | null }>} Object with field-value pairs.
+   */
+  mget(...fields) {
+    return this.#rawGet(
+      fields,
+      false
+    );
+  }
+  del(...fields) {
+    const epoch_start = this.#getEpoch();
+    const redisTransaction = this.#redisClient.createTransaction();
+    for (let epoch = epoch_start; epoch > epoch_start - this.#epoch_count; epoch--) {
+      redisTransaction.addCommand(
+        "HDEL",
+        `${this.#key}:${epoch}`,
+        ...fields
+      );
+    }
+    return redisTransaction.execute();
+  }
+};
+
 // src/client/transaction/string.js
 var RedisClientTransactionStringCommands = class {
   #redisClientTransaction;
@@ -331,6 +508,8 @@ var RedisClientTransactionStringCommands = class {
     return this.#execute(getMany, [...keys]);
   }
   /**
+   */
+  /**
    * @typedef StringSetOptions
    * @property {boolean} [existing] If `true`, SET will only succeed if the key already exists (`XX` argument). If `false`, SET will only succeed if the key does not already exist (`NX` argument).
    * @property {"keep" | StringSetOptionsExpire} [expire] -
@@ -348,7 +527,7 @@ var RedisClientTransactionStringCommands = class {
    * Complexity: O(1)
    *
    * @param {string} key Key name.
-   * @param {string | number | ArrayBuffer | Buffer} value Value to set.
+   * @param {RedisCommandArgument} value Value to set.
    * @param {StringSetOptions} [options] -
    * @returns {RedisClientTransaction} RedisClientTransaction instance.
    */
@@ -396,7 +575,7 @@ var RedisClientTransactionToolsCommands = class {
 
 // src/client/transaction.js
 var RedisClientTransaction = class {
-  #redis_client_multi;
+  #rawClientMulti;
   #generators = [];
   #queue_length = 0;
   #custom_names = null;
@@ -404,7 +583,7 @@ var RedisClientTransaction = class {
    * @param {RedisClient} redisClient RedisClient instance.
    */
   constructor(redisClient) {
-    this.#redis_client_multi = redisClient.redis_client.MULTI();
+    this.#rawClientMulti = redisClient.rawClient.MULTI();
   }
   get queue_length() {
     return this.#queue_length;
@@ -412,7 +591,7 @@ var RedisClientTransaction = class {
   /**
    * Adds command to the transaction.
    * @param {string} command Command name.
-   * @param {...(string | number | ArrayBuffer | Buffer)} args Command arguments.
+   * @param {...RedisCommandArgument} args Command arguments.
    * @returns {RedisClientTransaction} RedisClientTransaction instance.
    */
   addCommand(command, ...args) {
@@ -425,7 +604,8 @@ var RedisClientTransaction = class {
         ]);
       }
     }
-    this.#redis_client_multi.addCommand([
+    updateArguments(command, args);
+    this.#rawClientMulti.addCommand([
       command,
       ...args
     ]);
@@ -458,7 +638,7 @@ var RedisClientTransaction = class {
    * @returns {Array | { [key: string]: any }} Array, if no custom names were set, otherwise Object.
    */
   async execute() {
-    const result = await this.#redis_client_multi.EXEC();
+    const result = await this.#rawClientMulti.EXEC();
     for (const [index, generator] of this.#generators) {
       result[index] = generator.next(
         result[index]
@@ -528,19 +708,18 @@ var RedisScript = class {
 // src/client.js
 var RedisClient = class _RedisClient {
   #options;
-  #redis_client;
-  #scripts_cache = /* @__PURE__ */ new Map();
+  #rawClient;
   constructor(options) {
     this.#options = options;
-    this.#redis_client = (0, import_redis.createClient)(options);
-    this.#redis_client.on(
+    this.#rawClient = (0, import_redis.createClient)(options);
+    this.#rawClient.on(
       "error",
       (error) => console.error("[@kirick/redis-client]", error)
     );
-    this.#redis_client.connect();
+    this.#rawClient.connect();
   }
-  get redis_client() {
-    return this.#redis_client;
+  get rawClient() {
+    return this.#rawClient;
   }
   /**
    * Duplicates client with the same options as the current client.
@@ -567,7 +746,7 @@ var RedisClient = class _RedisClient {
       }
     }
     updateArguments(command, args);
-    let result = await this.#redis_client.sendCommand([
+    let result = await this.#rawClient.sendCommand([
       command,
       ...args
     ]);
@@ -596,6 +775,7 @@ var RedisClient = class _RedisClient {
   createTransaction() {
     return new RedisClientTransaction(this);
   }
+  #scripts_cache = /* @__PURE__ */ new Map();
   /**
    * Creates a script to be executed using the EVALSHA commands.
    * @param {string} script Lua script to upload.
@@ -614,6 +794,27 @@ var RedisClient = class _RedisClient {
     }
     return this.#scripts_cache.get(script_hash);
   }
+  #lru_cache = /* @__PURE__ */ new Map();
+  /**
+   * @param {object} options -
+   * @param {string} options.key Key name.
+   * @param {number} options.epoch_length Epoch length in milliseconds.
+   * @param {number} [options.epoch_count] Number of epochs to keep. Default: 10.
+   * @returns {RedisClientLru} -
+   */
+  createLru(options) {
+    const { key } = options;
+    if (this.#lru_cache.has(key) === false) {
+      this.#lru_cache.set(
+        key,
+        new RedisClientLru(
+          this,
+          options
+        )
+      );
+    }
+    return this.#lru_cache.get(key);
+  }
   /**
    * @callback RedisClientSubscribeCallback
    * @param {string | Buffer} message Message received.
@@ -627,7 +828,7 @@ var RedisClient = class _RedisClient {
    * @returns {Promise<void>} Promise that resolves when subscription is complete.
    */
   subscribe(channel, callback, is_buffer) {
-    return this.redis_client.subscribe(
+    return this.#rawClient.subscribe(
       channel,
       callback,
       is_buffer
@@ -641,7 +842,7 @@ var RedisClient = class _RedisClient {
    * @returns {Promise<void>} Promise that resolves when subscription is complete.
    */
   psubscribe(channel, callback, is_buffer) {
-    return this.redis_client.psubscribe(
+    return this.#rawClient.psubscribe(
       channel,
       callback,
       is_buffer
@@ -654,7 +855,7 @@ var RedisClient = class _RedisClient {
    * @returns {Promise<void>} Promise that resolves when unsubscription is complete.
    */
   unsubscribe(channel, callback) {
-    return this.redis_client.unsubscribe(
+    return this.#rawClient.unsubscribe(
       channel,
       callback
     );
@@ -666,7 +867,7 @@ var RedisClient = class _RedisClient {
    * @returns {Promise<void>} Promise that resolves when unsubscription is complete.
    */
   punsubscribe(channel, callback) {
-    return this.redis_client.unsubscribe(
+    return this.#rawClient.unsubscribe(
       channel,
       callback
     );
@@ -684,7 +885,7 @@ var RedisClient = class _RedisClient {
    * @returns {AsyncIterator<string>} Async iterator with key names.
    */
   scanIterator(options) {
-    return this.#redis_client.scanIterator(options);
+    return this.#rawClient.scanIterator(options);
   }
   /**
    * @typedef {object} ScanTypedOptions
@@ -698,7 +899,7 @@ var RedisClient = class _RedisClient {
    * @returns {AsyncIterator<{ field: string, value: string }>} Async iterator with field names and values.
    */
   hScanIterator(key, options) {
-    return this.#redis_client.hScanIterator(key, options);
+    return this.#rawClient.hScanIterator(key, options);
   }
   /**
    * Asynchronously iterates over keys in the set.
@@ -707,7 +908,7 @@ var RedisClient = class _RedisClient {
    * @returns {AsyncIterator<string>} Async iterator with members.
    */
   sScanIterator(key, options) {
-    return this.#redis_client.sScanIterator(key, options);
+    return this.#rawClient.sScanIterator(key, options);
   }
   /**
    * Asynchronously iterates over keys in the sorted set.
@@ -716,7 +917,7 @@ var RedisClient = class _RedisClient {
    * @returns {AsyncIterator<{ value: string, score: number }>} Async iterator with members and scores.
    */
   zScanIterator(key, options) {
-    return this.#redis_client.zScanIterator(key, options);
+    return this.#rawClient.zScanIterator(key, options);
   }
   /* eslint-enable jsdoc/no-undefined-types */
   /**
@@ -725,7 +926,7 @@ var RedisClient = class _RedisClient {
    * @returns {Promise<void>} Promise that resolves when client is disconnected.
    */
   async disconnect() {
-    return this.#redis_client.disconnect();
+    return this.#rawClient.disconnect();
   }
 };
 // Annotate the CommonJS export names for ESM import in node:
